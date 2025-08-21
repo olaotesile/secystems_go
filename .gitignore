@@ -1,0 +1,13 @@
+# Environment variables
+.env
+.env.local
+
+# Go binaries
+*.exe
+*.out
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*~
