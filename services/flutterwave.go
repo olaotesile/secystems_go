@@ -1,3 +1,4 @@
+// services/flutterwave.go
 package services
 
 import (
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"secsystems-go/models"
@@ -34,7 +36,7 @@ func GetBanksFromFlutterwave() ([]models.Bank, error) {
 	clientID := os.Getenv("FLUTTERWAVE_CLIENT_ID")
 	clientSecret := os.Getenv("FLUTTERWAVE_CLIENT_SECRET")
 
-	
+
 	tokenURL := "https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token"
 	data := fmt.Sprintf("client_id=%s&client_secret=%s&grant_type=client_credentials", clientID, clientSecret)
 
@@ -55,7 +57,7 @@ func GetBanksFromFlutterwave() ([]models.Bank, error) {
 	json.Unmarshal(body, &tokenResp)
 
 
-	banksURL := "https://api.flutterwave.com/v3/banks/NG"
+	banksURL := "https://api.flutterwave.com/v3/banks/NG" 
 	req, _ = http.NewRequest("GET", banksURL, nil)
 	req.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
 
@@ -71,16 +73,16 @@ func GetBanksFromFlutterwave() ([]models.Bank, error) {
 
 	
 	var banks []models.Bank
-now := time.Now().UTC().Format(time.RFC3339) 
+	now := time.Now().UTC().Format(time.RFC3339) 
 
-for _, b := range fwResp.Data {
-	banks = append(banks, models.Bank{
-		BankName:    b.Name,
-		Shortcode:   b.Code,
-		LogoURL:     b.Logo,
-		LastUpdated: now, 
-	})
-}
+	for _, b := range fwResp.Data {
+		banks = append(banks, models.Bank{
+			BankName:    b.Name,
+			Shortcode:   b.Code,
+			LogoURL:     b.Logo,
+			LastUpdated: now,
+		})
+	}
 
 	return banks, nil
 }
