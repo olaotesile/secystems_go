@@ -1,27 +1,21 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"time"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
-	localHandlers "secsystems-go/handlers" 
-	"github.com/gorilla/handlers"          
+	localHandlers "secsystems-go/handlers"
+	"github.com/gorilla/handlers"
 )
-
-var Client *mongo.Client
-var BankCollection *mongo.Collection
 
 func main() {
 	fmt.Println("🚀 Secsystems Go Backend Starting...")
 
-	clientOptions := options.Client().ApplyURI("mongodb+srv://bootesile:9Pcl8yhdJquOK8Ec@cluster0.y33atcb.mongodb.net/secsystems?retryWrites=true&w=majority&appName=Cluster0")
+	
+	/*
+	clientOptions := options.Client().ApplyURI("your_mongo_uri")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -39,16 +33,18 @@ func main() {
 
 	Client = client
 	BankCollection = client.Database("secsystems").Collection("bankmappings")
+	*/
 
+	
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "5000"
 	}
 
 	corsHandler := handlers.CORS(
-		handlers.AllowedOrigins([]string{"https://secsystems-frontend.vercel.app"}), 
+		handlers.AllowedOrigins([]string{"https://secsystems-frontend.vercel.app"}),
 		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
-	)(http.HandlerFunc(localHandlers.SearchBanks)) 
+	)(http.HandlerFunc(localHandlers.SearchBanks))
 
 	http.Handle("/banks", corsHandler)
 
