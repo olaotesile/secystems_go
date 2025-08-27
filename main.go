@@ -10,9 +10,9 @@ import (
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"secsystems-go/handlers"
 
-	"github.com/gorilla/handlers"
+	localHandlers "secsystems-go/handlers" 
+	"github.com/gorilla/handlers"          
 )
 
 var Client *mongo.Client
@@ -48,7 +48,7 @@ func main() {
 	corsHandler := handlers.CORS(
 		handlers.AllowedOrigins([]string{"https://secsystems-frontend.vercel.app"}), 
 		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
-	)(http.HandlerFunc(handlers.SearchBanks))
+	)(http.HandlerFunc(localHandlers.SearchBanks)) 
 
 	http.Handle("/banks", corsHandler)
 
