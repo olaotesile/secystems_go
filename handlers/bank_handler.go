@@ -3,105 +3,71 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
-	"secsystems-go/models"   
-	"secsystems-go/services" 
 )
 
-
-var BankCollection *mongo.Collection
-
+var BankCollection *mongo.Collection // ensure this is set in main.go
 
 func SearchBanks(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("query")
-	if query == "" {
-		http.Error(w, "Missing query parameter", http.StatusBadRequest)
+	w.Header().Set("Content-Type", "application/json")
+
+	// Fetch bank codes from Arca API
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get("https://arcapos-pay-middleware.qa.arca-payments.network/v9/pwts/cgate/ussd/bankcodes")
+	if err != nil {
+		http.Error(w, "Failed to fetch banks", http.StatusInternalServerError)
+		log.Println("❌ Error fetching from Arca:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var banks []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&banks); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusInternalServerError)
+		log.Println("❌ Error decoding JSON:", err)
 		return
 	}
 
+	// Filter out entries with nil internalCode and remove duplicates
+	cleaned := make([]interface{}, 0, len(banks))
+	seen := make(map[string]bool)
+	for _, b := range banks {
+		code, ok := b["internalCode"].(string)
+		if !ok || code == "" {
+			continue
+		}
+		if seen[code] {
+			continue
+		}
+		seen[code] = true
+		cleaned = append(cleaned, b)
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Store in MongoDB
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var cachedBanks []models.Bank
-	filter := bson.M{
-		"$or": []bson.M{
-			{"bankName": bson.M{"$regex": query, "$options": "i"}},
-			{"shortcode": bson.M{"$regex": query, "$options": "i"}},
-		},
-	}
-
-	cursor, err := BankCollection.Find(ctx, filter)
+	// Clear previous entries
+	_, err = BankCollection.DeleteMany(ctx, bson.M{})
 	if err != nil {
-		log.Println("❌ Error querying MongoDB:", err)
-	} else {
-		if err = cursor.All(ctx, &cachedBanks); err == nil && len(cachedBanks) > 0 {
-			response := map[string]interface{}{
-				"success": true,
-				"data":    cachedBanks,
-				"message": "Banks fetched from cache",
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-			return
+		log.Println("❌ Error clearing previous banks:", err)
+	}
+
+	if len(cleaned) > 0 {
+		_, err = BankCollection.InsertMany(ctx, cleaned)
+		if err != nil {
+			log.Println("❌ Error inserting banks into MongoDB:", err)
+		} else {
+			fmt.Println("✅ Bank codes stored in MongoDB")
 		}
 	}
 
-	
-	banks, err := services.GetBanksFromFlutterwave()
-	if err != nil {
-		http.Error(w, "Failed to fetch banks from Flutterwave", http.StatusInternalServerError)
-		return
-	}
-
-	
-	var filtered []models.Bank
-	for _, b := range banks {
-		if strings.Contains(strings.ToLower(b.BankName), strings.ToLower(query)) ||
-			strings.Contains(b.Shortcode, query) {
-			filtered = append(filtered, b)
-		}
-	}
-
-	
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		var docs []interface{}
-		for _, b := range banks {
-			docs = append(docs, b)
-		}
-
-	
-		for _, doc := range docs {
-			_, err := BankCollection.ReplaceOne(
-				ctx,
-				bson.M{"shortcode": doc.(models.Bank).Shortcode},
-				doc,
-				options.Replace().SetUpsert(true),
-			)
-			if err != nil {
-				log.Println("❌ Failed to save bank to MongoDB:", err)
-			}
-		}
-	}()
-
-	
-	response := map[string]interface{}{
-		"success": true,
-		"data":    filtered,
-		"message": "Banks fetched from Flutterwave and cached",
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	// Return the response to frontend
+	json.NewEncoder(w).Encode(banks)
 }
