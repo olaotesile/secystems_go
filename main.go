@@ -41,10 +41,14 @@ func main() {
 		port = "5000"
 	}
 
-	corsHandler := handlers.CORS(
-		handlers.AllowedOrigins([]string{"https://secsystems-frontend.vercel.app"}),
-		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
-	)(http.HandlerFunc(localHandlers.SearchBanks))
+corsHandler := handlers.CORS(
+    handlers.AllowedOrigins([]string{
+        "http://localhost:5173",  // for local dev
+        "https://secsystems-frontend.vercel.app", // production frontend
+    }),
+    handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
+)(http.HandlerFunc(localHandlers.SearchBanks))
+
 
 	http.Handle("/banks", corsHandler)
 
