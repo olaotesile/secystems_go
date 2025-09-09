@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,16 +19,19 @@ var BankCollection *mongo.Collection
 func InitBankCollection(collection *mongo.Collection) {
 	BankCollection = collection
 
-	// Ensure unique index on bankName
+	// Ensure unique compound index on bankName + code
 	_, err := BankCollection.Indexes().CreateOne(
 		context.Background(),
 		mongo.IndexModel{
-			Keys:    bson.D{{Key: "bankName", Value: 1}},
+			Keys: bson.D{
+				{Key: "bankName", Value: 1},
+				{Key: "code", Value: 1},
+			},
 			Options: options.Index().SetUnique(true),
 		},
 	)
 	if err != nil {
-		log.Println("⚠️ Could not create index on bankName:", err)
+		log.Println("⚠️ Could not create index:", err)
 	}
 }
 
@@ -53,7 +57,7 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 	cursor, err := BankCollection.Find(ctx, filter)
 	if err == nil {
 		if err = cursor.All(ctx, &results); err == nil && len(results) > 0 {
-			log.Println("✅ Found in Mongo:", results)
+			log.Println("✅ Found in Mongo:", len(results))
 			json.NewEncoder(w).Encode(results)
 			return
 		}
@@ -86,7 +90,7 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 	cleaned := make([]interface{}, 0, len(banks))
 	for _, b := range banks {
 		name, _ := b["bankName"].(string)
-		code, _ := b["ussdCode"].(string) // adjust if different
+		code, _ := b["code"].(string) // ✅ use `code` directly
 		if name == "" {
 			continue
 		}
@@ -102,7 +106,7 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 	if len(cleaned) > 0 {
 		_, err = BankCollection.InsertMany(ctx, cleaned)
 		if err != nil {
-			log.Println("⚠️ Insert error:", err)
+			log.Println("⚠️ Insert error (duplicates likely skipped):", err)
 		} else {
 			log.Println("💾 Inserted into Mongo")
 		}
@@ -119,7 +123,7 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		log.Println("🔎 Filtered banks:", filtered)
+		log.Println("🔎 Filtered banks:", len(filtered))
 		json.NewEncoder(w).Encode(filtered)
 		return
 	}
