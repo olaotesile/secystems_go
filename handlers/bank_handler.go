@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -37,8 +38,9 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	query := r.URL.Query().Get("query")
+	log.Println("🔍 Search query:", query)
 
-	// 1. Try Mongo first
+	// 1. Check Mongo first
 	filter := bson.M{}
 	if query != "" {
 		filter["bankName"] = bson.M{
@@ -51,6 +53,7 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 	cursor, err := BankCollection.Find(ctx, filter)
 	if err == nil {
 		if err = cursor.All(ctx, &results); err == nil && len(results) > 0 {
+			log.Println("✅ Found in Mongo:", results)
 			json.NewEncoder(w).Encode(results)
 			return
 		}
@@ -60,6 +63,7 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Not in Mongo → fetch from Arca
+	log.Println("🌍 Fetching from Arca...")
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get("https://arcapos-pay-middleware.qa.arca-payments.network/v9/pwts/cgate/ussd/bankcodes")
 	if err != nil {
@@ -76,40 +80,49 @@ func SearchBanks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Deduplicate before inserting
-	seen := make(map[string]bool)
+	log.Println("📦 Arca response count:", len(banks))
+
+	// 3. Normalize into your schema
 	cleaned := make([]interface{}, 0, len(banks))
 	for _, b := range banks {
-		if name, ok := b["bankName"].(string); ok && name != "" {
-			if !seen[name] {
-				seen[name] = true
-				cleaned = append(cleaned, b)
-			}
+		name, _ := b["bankName"].(string)
+		code, _ := b["ussdCode"].(string) // adjust if different
+		if name == "" {
+			continue
 		}
+		cleaned = append(cleaned, map[string]interface{}{
+			"bankName": name,
+			"code":     code,
+			"id":       uuid.New().String(),
+		})
 	}
+
+	log.Println("🧹 Normalized banks count:", len(cleaned))
 
 	if len(cleaned) > 0 {
 		_, err = BankCollection.InsertMany(ctx, cleaned)
 		if err != nil {
-			log.Println("⚠️ Insert error (likely duplicates skipped):", err)
+			log.Println("⚠️ Insert error:", err)
+		} else {
+			log.Println("💾 Inserted into Mongo")
 		}
 	}
 
-	// 4. After saving → re-run the same filter on Mongo
-	cursor, err = BankCollection.Find(ctx, filter)
-	if err != nil {
-		http.Error(w, "Failed to fetch banks after refresh", http.StatusInternalServerError)
-		log.Println("❌ Error fetching after refresh:", err)
+	// 4. Return filtered response to frontend
+	if query != "" {
+		filtered := []map[string]interface{}{}
+		for _, c := range cleaned {
+			row := c.(map[string]interface{})
+			if rowName, ok := row["bankName"].(string); ok {
+				if match, _ := regexp.MatchString("(?i)"+query, rowName); match {
+					filtered = append(filtered, row)
+				}
+			}
+		}
+		log.Println("🔎 Filtered banks:", filtered)
+		json.NewEncoder(w).Encode(filtered)
 		return
 	}
-	defer cursor.Close(ctx)
 
-	results = []map[string]interface{}{}
-	if err = cursor.All(ctx, &results); err != nil {
-		http.Error(w, "Failed to decode banks after refresh", http.StatusInternalServerError)
-		log.Println("❌ Decode error after refresh:", err)
-		return
-	}
-
-	json.NewEncoder(w).Encode(results)
+	json.NewEncoder(w).Encode(cleaned)
 }
