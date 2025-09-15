@@ -1,9 +1,11 @@
+// models/bank.go
 package models
 
+import "go.mongodb.org/mongo-driver/bson/primitive"
+
 type Bank struct {
-	ID          string `json:"id" bson:"_id,omitempty"`
-	BankName    string `json:"bankName" bson:"bankName"`
-	Shortcode   string `json:"shortcode" bson:"shortcode"`
-	LogoURL     string `json:"logoUrl" bson:"logoUrl"`
-	LastUpdated string `json:"lastUpdated" bson:"lastUpdated"`
+	ID       primitive.ObjectID `json:"id" bson:"_id"`
+	BankName string             `json:"bankName" bson:"name"`
+	Code     string             `json:"code" bson:"code"`
+	LogoURL  string             `json:"logoUrl" bson:"logo"`
 }
